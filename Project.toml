@@ -1,0 +1,13 @@
+name = "NICAMIO"
+uuid = "aefe623e-8955-41c1-958e-feea0b274d8e"
+authors = ["Chihiro Kodama"]
+version = "0.1.0"
+
+[compat]
+julia = "0.1"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
