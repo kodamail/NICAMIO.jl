@@ -14,7 +14,12 @@ export nio_read_panda
 include( "NioHgrid.jl" )
 using .NioHgrid
 export NioHgridInfo
+export nio_hgrid_open
+export nio_hgrid_open_all
 export nio_hgrid_read
+export nio_hgrid_read_all!
+export nio_hgrid_set_vtkdata!
+
 export xyz2latlon  # -> private
 
 
