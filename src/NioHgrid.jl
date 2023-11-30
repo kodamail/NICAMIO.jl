@@ -9,6 +9,7 @@ export nio_hgrid_open_all
 export nio_hgrid_read
 export nio_hgrid_read_all!
 export nio_hgrid_set_vtkdata!
+export nio_hgrid_set_latlon!
 
 export xyz2latlon
 
@@ -59,6 +60,8 @@ mutable struct NioHgridAllData
     vtk_points::Array{Any,1}
 #    vtk_cells::Array{MeshCell{VTKCellType,Array{Int64,2}}}
     vtk_cells::Array{Any,1}
+    lat::Array{Any,1}
+    lon::Array{Any,1}
     
     function NioHgridAllData( nio )
         self = new()
@@ -72,6 +75,8 @@ mutable struct NioHgridAllData
 	self.data = Array{Dict{String,Any}}(undef,self.pe_num)
 	self.vtk_points = Array{Any}(undef,self.pe_num)
 	self.vtk_cells = Array{Any}(undef,self.pe_num)
+	self.lat = Array{Any}(undef,self.pe_num)
+	self.lon = Array{Any}(undef,self.pe_num)
 	return self
     end
 end
@@ -173,7 +178,14 @@ end
 
 
 function nio_hgrid_set_vtkdata!( nioh::NioHgridAllData )
-#    nioh.vtk_points = Array{Array{Float32,1}}(undef,nioh.pe_num)
+    ij2p(T) = T[1] + (T[2]-1) * (2^nioh.gmr)
+    p2ij(p) = (p-1) % (2^nioh.gmr) + 1, (p-1) ÷ (2^nioh.gmr) + 1
+    ij2p_halo(T) = (T[1]+1) + T[2] * (2^nioh.gmr+2)
+    p2ij_halo(p) = (p-1) % (2^nioh.gmr+2), (p-1) ÷ (2^nioh.gmr+2)
+    ijm(T)   = T[1]  , T[2]-1
+    imj(T)   = T[1]-1, T[2]
+    imjm(T)  = T[1]-1, T[2]-1
+
     for pe=0:nioh.pe_num-1
         nioh.vtk_points[pe+1] = Float32.(
 	    [ nioh.data[pe+1]["hix"]' nioh.data[pe+1]["hjx"]' ;
@@ -182,16 +194,6 @@ function nio_hgrid_set_vtkdata!( nioh::NioHgridAllData )
         nioh.vtk_cells[pe+1] = Array{MeshCell{VTKCellType,Array{Int64,1}}}( undef, nioh.gall_in )  # TODO: add halo cell if necessary
   
 	joffset = nioh.gall
-
-        ij2p(T) = T[1] + (T[2]-1) * (2^nioh.gmr)
-        p2ij(p) = (p-1) % (2^nioh.gmr) + 1, (p-1) ÷ (2^nioh.gmr) + 1
-        ij2p_halo(T) = (T[1]+1) + T[2] * (2^nioh.gmr+2)
-        p2ij_halo(p) = (p-1) % (2^nioh.gmr+2), (p-1) ÷ (2^nioh.gmr+2)
-
-        ijm(T)   = T[1]  , T[2]-1
-        imj(T)   = T[1]-1, T[2]
-        imjm(T)  = T[1]-1, T[2]-1
-
 
 	for p=1 : nioh.gall_in  # p: no halo  px: with halo
             p1 = ij2p_halo(p2ij(p)) + joffset
@@ -202,12 +204,17 @@ function nio_hgrid_set_vtkdata!( nioh::NioHgridAllData )
 	    p6 = ij2p_halo(imj(p2ij(p)))
             nioh.vtk_cells[pe+1][p] = MeshCell(VTKCellTypes.VTK_POLYGON, [ p1,p2,p3,p4,p5,p6 ])
         end
-
-
     end
-
 end
 
+
+function nio_hgrid_set_latlon!( nioh::NioHgridAllData )
+    for pe=0:nioh.pe_num-1
+        latlon = xyz2latlon.( nioh.data[pe+1]["hx"], nioh.data[pe+1]["hy"], nioh.data[pe+1]["hz"] )
+        nioh.lat[pe+1] = first.(latlon)
+        nioh.lon[pe+1] = last.(latlon)
+    end
+end
 
 # From NICAM/share/mod_vector.f90
 function xyz2latlon( x, y, z )

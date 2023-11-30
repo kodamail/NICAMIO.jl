@@ -19,6 +19,7 @@ export nio_hgrid_open_all
 export nio_hgrid_read
 export nio_hgrid_read_all!
 export nio_hgrid_set_vtkdata!
+export nio_hgrid_set_latlon!
 
 export xyz2latlon  # -> private
 

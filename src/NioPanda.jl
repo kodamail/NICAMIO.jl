@@ -12,6 +12,11 @@ tmpHSHORT= Array{UInt8}(undef, 16)
 tmpHMID  = Array{UInt8}(undef, 64)
 tmpHLONG = Array{UInt8}(undef,256)
 
+# constants
+#CNST_UNDEF4 = -9.9999f30                # undefined value (REAL4)
+#CNST_UNDEF8 = -9.9999e30                # undefined value (REAL8)
+CNST_UNDEF4 = -9.99f34                # undefined value (REAL4), old NICAM
+CNST_UNDEF8 = -9.99e34                # undefined value (REAL8), old NICAM
 
 
 #function niopenPanda( fname::String )
@@ -99,8 +104,9 @@ function nio_read_panda(
     step::Integer=-1,
     r::Integer=-1,    # region
     k::Integer=-1,
-    flag_halo::Bool=false
-)
+    flag_halo::Bool=false,
+    flag_undef2nan=false
+    )
     vret = Array{Any}( undef, 0 )
 
 
@@ -135,19 +141,27 @@ function nio_read_panda(
 
             if ni.info["dinfo"][i]["datatype"] == 0 # REAL4
                 tmpbuf = Array{Float32}( undef, idef, jdef, kdef, rdef )
-#                read!( fin, tmpbuf )
-#		append!( vret, ntoh.( tmpbuf[:,:,kmin:kmax,rmin:rmax] ) )
             elseif ni.info["dinfo"][i]["datatype"] == 1 # REAL8
                 tmpbuf = Array{Float64}( undef, idef, jdef, kdef, rdef )
-#                read!( fin, tmpbuf )
-#		append!( vret, ntoh.( tmpbuf[:,:,kmin:kmax,rmin:rmax] ) )
             else
-
 	        return nothing
 	    end
 	    
             read!( fin, tmpbuf )
-            append!( vret, ntoh.( tmpbuf[imin:imax,jmin:jmax,kmin:kmax,rmin:rmax] ) )
+	    tmpbuf .= ntoh.( tmpbuf )
+
+            if flag_undef2nan == true
+                if ni.info["dinfo"][i]["datatype"] == 0 # REAL4
+                    tmpbuf[tmpbuf.==CNST_UNDEF4] .= NaN32
+#                    tmpbuf[tmpbuf.<=9.99e33] .= NaN32
+
+                elseif ni.info["dinfo"][i]["datatype"] == 1 # REAL8
+                    tmpbuf[tmpbuf.==CNST_UNDEF8] .= NaN64
+		end
+
+            end
+#            append!( vret, ntoh.( tmpbuf[imin:imax,jmin:jmax,kmin:kmax,rmin:rmax] ) )
+            append!( vret, tmpbuf[imin:imax,jmin:jmax,kmin:kmax,rmin:rmax]  )
         end
     end
 
