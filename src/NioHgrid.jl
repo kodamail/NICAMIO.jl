@@ -4,26 +4,23 @@ using Printf
 using FortranFiles
 using WriteVTK
 
-#export NioHgridInfo
 export NioHgridFile
 export NioHgridAllFiles
 export nio_hgrid_open_panda
-export nio_hgrid_open_sequential
 export nio_hgrid_open_panda_all
+export nio_hgrid_open_sequential
 export nio_hgrid_open_sequential_all
 export nio_hgrid_read!
 export nio_hgrid_read_all!
 export nio_hgrid_set_vtkdata!
-#export nio_hgrid_set_latlon!
-
-export xyz2latlon
 
 import ..NioPanda:
     NioFile,
     nio_open_panda,
     nio_read_panda
 
-
+# per pe
+# (pe=region if sequential format)
 mutable struct NioHgridFile
     nio::NioFile
     type::String
@@ -32,19 +29,15 @@ mutable struct NioHgridFile
     gmr::Integer
     gall::Integer      # Number of grids per region including halo
     gall_in::Integer   # Number of grids per region without halo
-#    data::Array{Dict{String,Any},1}
     data::Dict{String,Any}
     lat::Array{Any,1}
     lon::Array{Any,1}
-#    vtk_points::Array{Any,1}
-#    vtk_cells::Array{Any,1}
     vtk_points::Any
     vtk_cells::Any
     
 #    function NioHgridFile( nio::NioFile )
     function NioHgridFile( fname::String; type::String="panda", glevel::Int=-1, rlevel::Int=-1 )
         self         = new()
-#	self.nio     = nio
         self.type    = type
         if type == "sequential"
 	    self.nio = NioFile( fname )
@@ -62,10 +55,10 @@ mutable struct NioHgridFile
     end
 end
 
-
-mutable struct NioHgridAllFiles  # consider pole
-    nioh::Array{NioHgridFile,1}
-    pe_num::Integer
+# all the regions including pole
+mutable struct NioHgridAllFiles
+    nioh::Array{NioHgridFile,1}  # array of regional file
+    pe_num::Integer  # =region_num if sequential format
     glevel::Integer
     rlevel::Integer
     gmr::Integer
@@ -73,12 +66,11 @@ mutable struct NioHgridAllFiles  # consider pole
     gall_in::Integer   # Number of grids per region without halo
 
     data_np::Array{Dict{String,Any},1}
-
-#    data_np::Dict{String,Any}
-#    lat_np::Array{Any,1}
-#    lon_np::Array{Any,1}
-#    vtk_points_np::Any
-#    vtk_cells_np::Any
+    data_sp::Array{Dict{String,Any},1}
+    vtk_points_np::Any
+    vtk_points_sp::Any
+    vtk_cells_np::Any
+    vtk_cells_sp::Any
     
     function NioHgridAllFiles( nioh::Array{NioHgridFile,1} )
         self            = new()
@@ -95,16 +87,19 @@ mutable struct NioHgridAllFiles  # consider pole
 end
 
 
+# PANDA format
 function nio_hgrid_open_panda( fname::String )
     return NioHgridFile( fname )
 end
 
 
+# sequential format
 function nio_hgrid_open_sequential( fname::String, glevel::Int, rlevel::Int )
     return NioHgridFile( fname, type="sequential", glevel=glevel, rlevel=rlevel )
 end
 
 
+# PANDA format, all regions
 function nio_hgrid_open_panda_all( fhead::String, pe_num::Integer )
     nioh = Array{NioHgridFile}(undef,pe_num)
 
@@ -118,8 +113,9 @@ function nio_hgrid_open_panda_all( fhead::String, pe_num::Integer )
 end
 
 
+# sequential format, all regions, assuming 1rgn/prc
 function nio_hgrid_open_sequential_all( fhead::String, glevel::Int, rlevel::Int )
-    pe_num = 10*4^rlevel  # 1rgn/prc
+    pe_num = 10*4^rlevel
     nioh = Array{NioHgridFile}(undef,pe_num)
 
     for pe=0:pe_num-1
@@ -132,6 +128,7 @@ function nio_hgrid_open_sequential_all( fhead::String, glevel::Int, rlevel::Int 
 end
 
 
+# read region(s) of a process
 function nio_hgrid_read!( nioh::NioHgridFile )
     nioh.data = Dict(
         "hx"  => [], "hy"  => [], "hz"  => [],
@@ -140,18 +137,17 @@ function nio_hgrid_read!( nioh::NioHgridFile )
 
     if nioh.type == "sequential"
         fin = FortranFile( nioh.nio.fname, convert="big-endian" )
-#        FortranFile( nioh.nio.fname, convert="big-endian" ) do fin
 	read( fin )  # skip
         idef = 2^( nioh.nio.info["glevel"] - nioh.nio.info["rlevel"] ) + 2
         jdef = idef
-	tmpbuf = Array{Float64}( undef, idef, jdef, 1, 1 )  # 1prc/1rgn
+	tmpbuf = Array{Float64}( undef, idef, jdef, 1, 1 )
 	read( fin, tmpbuf )
         nioh.data["hx"] = reshape(tmpbuf[2:idef-1,2:jdef-1,1,1],:)
 	read( fin, tmpbuf )
         nioh.data["hy"] = reshape(tmpbuf[2:idef-1,2:jdef-1,1,1],:)
 	read( fin, tmpbuf )
         nioh.data["hz"] = reshape(tmpbuf[2:idef-1,2:jdef-1,1,1],:)
-	tmpbuf = Array{Float64}( undef, idef, jdef, 2, 1 )  # 1prc/1rgn
+	tmpbuf = Array{Float64}( undef, idef, jdef, 2, 1 )
 	read( fin, tmpbuf )
         nioh.data["hix"] = reshape(tmpbuf[1:idef,1:jdef,1,1],:)
         nioh.data["hjx"] = reshape(tmpbuf[1:idef,1:jdef,2,1],:)
@@ -162,13 +158,12 @@ function nio_hgrid_read!( nioh::NioHgridFile )
         nioh.data["hiz"] = reshape(tmpbuf[1:idef,1:jdef,1,1],:)
         nioh.data["hjz"] = reshape(tmpbuf[1:idef,1:jdef,2,1],:)
 	close(fin)
-#	end
 	
     elseif nioh.type == "panda"
         nioh.data["hx"] = nio_read_panda( nioh.nio, "grd_x_x" )  # TODO: unify halo treatment with hix, ...
         nioh.data["hy"] = nio_read_panda( nioh.nio, "grd_x_y" )
         nioh.data["hz"] = nio_read_panda( nioh.nio, "grd_x_z" )
-
+        #
         nioh.data["hix"] = nio_read_panda( nioh.nio, "grd_xt_ix", flag_halo=true )
         nioh.data["hiy"] = nio_read_panda( nioh.nio, "grd_xt_iy", flag_halo=true )
         nioh.data["hiz"] = nio_read_panda( nioh.nio, "grd_xt_iz", flag_halo=true )
@@ -185,43 +180,47 @@ function nio_hgrid_read!( nioh::NioHgridFile )
 end
 
 
+# read all the regions
 function nio_hgrid_read_all!( nioh_all::NioHgridAllFiles )
-    
     hz_max = Array{Any}(undef,nioh_all.pe_num)  # for searching pole
-
     for pe=0:nioh_all.pe_num-1
         nio_hgrid_read!( nioh_all.nioh[pe+1] )
         hz_max[pe+1] = maximum( nioh_all.nioh[pe+1].data["hz"] )
     end
 
-    pei_np = sortperm(hz_max,rev=true)[1:5]
-    pei_sp = sortperm(hz_max)[1:5]
+    pei_np = sortperm(hz_max,rev=true )[1:5]   # PE indices for NP
+    pei_sp = sortperm(hz_max,rev=false)[1:5]   # PE indices for SP
     println(pei_np)
     println(pei_sp)
-
-#    println( nioh_all.nioh[:].lon[(2^nioh_all.gmr)*(2^nioh_all.gmr-1)+1] )
-
     lon_np = Array{Any}(undef,5)
+    lon_sp = Array{Any}(undef,5)
     for i=1:5
-        lon_np[i] = nioh_all.nioh[pei_np[i]].lon[(2^nioh_all.gmr)*(2^nioh_all.gmr-1)+1]
+        lon_np[i] = nioh_all.nioh[pei_np[i]].lon[(2^nioh_all.gmr)*(2^nioh_all.gmr-1)+1]  # next to NP grid
+        lon_sp[i] = nioh_all.nioh[pei_sp[i]].lon[2^nioh_all.gmr]                         # next to SP grid
     end
+    display(lon_np)
+    #display(lon_sp)
     pei2_np = sortperm(lon_np,rev=false)[1:5]
+    pei2_sp = sortperm(lon_sp,rev=false)[1:5]
+    display(pei2_np)
+    #display(pei2_sp)
 
     nioh_all.data_np = Array{Dict{String,Any}}(undef,5)
+    nioh_all.data_sp = Array{Dict{String,Any}}(undef,5)
 
     for i=1:5
-#        println( nioh_all.nioh[pei_np[pei2_np[i]]].data["hjx"][(2^nioh_all.gmr)*(2^nioh_all.gmr-1)+1] )
-#        println( nioh_all.nioh[pei_np[pei2_np[i]]].data["hjy"][(2^nioh_all.gmr)*(2^nioh_all.gmr-1)+1] )
-#        println( nioh_all.nioh[pei_np[pei2_np[i]]].data["hjz"][(2^nioh_all.gmr)*(2^nioh_all.gmr-1)+1] )
-        nioh_all.data_np[i] = Dict( "hx"  => [], "hy"  => [], "hz"  => [] )
-
-	nioh_all.data_np[i]["x"] = nioh_all.nioh[pei_np[pei2_np[i]]].data["hjx"][(2^nioh_all.gmr)*(2^nioh_all.gmr-1)+1]
-	nioh_all.data_np[i]["y"] = nioh_all.nioh[pei_np[pei2_np[i]]].data["hjy"][(2^nioh_all.gmr)*(2^nioh_all.gmr-1)+1]
-	nioh_all.data_np[i]["z"] = nioh_all.nioh[pei_np[pei2_np[i]]].data["hjz"][(2^nioh_all.gmr)*(2^nioh_all.gmr-1)+1]
+        nioh_all.data_np[i] = Dict()
+        nioh_all.data_sp[i] = Dict()
+        nioh_all.data_np[i]["cellx"] = nioh_all.nioh[pei_np[pei2_np[i]]].data["hjx"][(2^nioh_all.gmr+2)*(2^nioh_all.gmr)+2]
+        nioh_all.data_np[i]["celly"] = nioh_all.nioh[pei_np[pei2_np[i]]].data["hjy"][(2^nioh_all.gmr+2)*(2^nioh_all.gmr)+2]
+        nioh_all.data_np[i]["cellz"] = nioh_all.nioh[pei_np[pei2_np[i]]].data["hjz"][(2^nioh_all.gmr+2)*(2^nioh_all.gmr)+2]
+        nioh_all.data_sp[i]["cellx"] = nioh_all.nioh[pei_sp[pei2_sp[i]]].data["hix"][(2^nioh_all.gmr+2)*2-1]
+        nioh_all.data_sp[i]["celly"] = nioh_all.nioh[pei_sp[pei2_sp[i]]].data["hiy"][(2^nioh_all.gmr+2)*2-1]
+        nioh_all.data_sp[i]["cellz"] = nioh_all.nioh[pei_sp[pei2_sp[i]]].data["hiz"][(2^nioh_all.gmr+2)*2-1]
     end
 
-#    display(lon_np)
-#    display(pei2_np)
+    display(nioh_all.data_np[1:5])
+#    display(nioh_all.data_sp[1:5])
 	
 end
 
@@ -256,7 +255,20 @@ function nio_hgrid_set_vtkdata!( nioh_all::NioHgridAllFiles )
         end
     end
 
-#    nioh_all.vtk_points_np = 
+    nioh_all.vtk_points_np = Float32.(
+	    [ nioh_all.data_np[1]["cellx"] nioh_all.data_np[2]["cellx"] nioh_all.data_np[3]["cellx"] nioh_all.data_np[4]["cellx"] nioh_all.data_np[5]["cellx"] ;
+              nioh_all.data_np[1]["celly"] nioh_all.data_np[2]["celly"] nioh_all.data_np[3]["celly"] nioh_all.data_np[4]["celly"] nioh_all.data_np[5]["celly"] ;
+              nioh_all.data_np[1]["cellz"] nioh_all.data_np[2]["cellz"] nioh_all.data_np[3]["cellz"] nioh_all.data_np[4]["cellz"] nioh_all.data_np[5]["cellz"] ])
+    nioh_all.vtk_cells_np = Array{MeshCell{VTKCellType,Array{Int64,1}}}( undef, 1 )
+    nioh_all.vtk_cells_np[1] = MeshCell(VTKCellTypes.VTK_POLYGON, [ 1, 2, 3, 4, 5 ])
+    #
+    nioh_all.vtk_points_sp = Float32.(
+	    [ nioh_all.data_sp[1]["cellx"] nioh_all.data_sp[2]["cellx"] nioh_all.data_sp[3]["cellx"] nioh_all.data_sp[4]["cellx"] nioh_all.data_sp[5]["cellx"] ;
+              nioh_all.data_sp[1]["celly"] nioh_all.data_sp[2]["celly"] nioh_all.data_sp[3]["celly"] nioh_all.data_sp[4]["celly"] nioh_all.data_sp[5]["celly"] ;
+              nioh_all.data_sp[1]["cellz"] nioh_all.data_sp[2]["cellz"] nioh_all.data_sp[3]["cellz"] nioh_all.data_sp[4]["cellz"] nioh_all.data_sp[5]["cellz"] ])
+    nioh_all.vtk_cells_sp = Array{MeshCell{VTKCellType,Array{Int64,1}}}( undef, 1 )
+    nioh_all.vtk_cells_sp[1] = MeshCell(VTKCellTypes.VTK_POLYGON, [ 1, 2, 3, 4, 5 ])
+
 end
 
 

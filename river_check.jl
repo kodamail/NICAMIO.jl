@@ -1,9 +1,9 @@
 using Printf
 using DelimitedFiles
+
 using WriteVTK   # not necessary at last
 
 using NICAMIO
-
 
 
 # load hgrid (all)
@@ -18,13 +18,13 @@ using NICAMIO
 #nioh_all = nio_hgrid_open_panda_all( fhead, pe_max )
 
 
-fhead = "/home/kodama/data/make_NICAM_DATABASE_CMIP6/NICAM_DATABASE_CMIP6/hgrid/gl05/rl00/grid"
-nioh_all = nio_hgrid_open_sequential_all( fhead, 5, 0 )
-pe_max=10
+#fhead = "/home/kodama/data/make_NICAM_DATABASE_CMIP6/NICAM_DATABASE_CMIP6/hgrid/gl05/rl00/grid"
+#nioh_all = nio_hgrid_open_sequential_all( fhead, 5, 0 )
+#pe_max=10
 
-#fhead = "/home/kodama/data/make_NICAM_DATABASE_CMIP6/NICAM_DATABASE_CMIP6/hgrid/gl05/rl02/grid"
-#nioh_all = nio_hgrid_open_sequential_all( fhead, 5, 2 )
-#pe_max=160
+fhead = "/home/kodama/data/make_NICAM_DATABASE_CMIP6/NICAM_DATABASE_CMIP6/hgrid/gl05/rl02/grid"
+nioh_all = nio_hgrid_open_sequential_all( fhead, 5, 2 )
+pe_max=160
 
 #fhead = "/home/kodama/data/make_NICAM_DATABASE_CMIP6/NICAM_DATABASE_CMIP6/hgrid/gl11/rl05/grid"
 #nioh_all = nio_hgrid_open_sequential_all( fhead, 11, 5 )
@@ -35,10 +35,11 @@ nio_hgrid_read_all!( nioh_all )
 
 nio_hgrid_set_vtkdata!( nioh_all )
 
+
+#TODO: panda open/read -> create all_read etc
+
 #io = open("test.csv", "w")
 #write( io, "hx,hy,hz,lat,lon,landfrc,lakefrc,tem,riv_liq,riv_ice\n" )
-
-
 
 for pe=0:pe_max-1
 #pe=0
@@ -71,7 +72,8 @@ for pe=0:pe_max-1
 #    fname3 = "/home/kodama/data/project/202311_NICOCO/river/ico_panda_cmp/gl05/rl02/pe160/runoff_clim1958-2019" * pe6
 #    fname3 = "/home/kodama/data/project/202311_NICOCO/river/ico_panda_cmp/gl05/rl00/pe10/runoff_clim1958-2019" * pe6
     fname3 = "/home/kodama/data/project/202311_NICOCO/river/ico_panda/gl11/rl05/c01/pe10240/runoff_clim1958-2019" * pe6
-    ni3 = nio_open_panda( fname3, flag_showinfo=true )
+    #ni3 = nio_open_panda( fname3, flag_showinfo=true )
+    ni3 = nio_open_panda( fname3 )
     runoff_liq = Float32.( nio_read_panda( ni3, "runoff_liq", step=1, flag_undef2nan=true ) )
     runoff_ice = Float32.( nio_read_panda( ni3, "runoff_ice", step=1, flag_undef2nan=true ) )
 
@@ -90,4 +92,11 @@ for pe=0:pe_max-1
 
 end
 #close(io)
+
+vtk_grid("test3/test3_np.vtu", nioh_all.vtk_points_np, nioh_all.vtk_cells_np ) do vtk
+    vtk["test"] = 1
+end
+vtk_grid("test3/test3_sp.vtu", nioh_all.vtk_points_sp, nioh_all.vtk_cells_sp ) do vtk
+    vtk["test"] = 1
+end
 
